@@ -3,6 +3,7 @@
 import os
 import pathlib
 import pickle
+import requests
 
 from ablc.structure_analysis import *
 from ablc.df_query import *
@@ -23,11 +24,17 @@ df = combine_dup_rows(df)
 
 data = dict()
 rows = df.shape[0]
+
+obsolete_pdbs = [s.lower() for s in requests.get("https://data.rcsb.org/rest/v1/holdings/removed/entry_ids").json()]
 for i, row in enumerate(df.itertuples(index=False)):
 
     print(f"Processing: {row.pdb} | {i+1} / {rows}")
     try:
+        if row.pdb.lower() in obsolete_pdbs:
+            raise ValueError(f"pdb {row.pdb} is obsolete, skipping due to lack of metadata")
+        lc_seq = get_sequence_from_pdb(pdb_id=row.pdb, keyword="light", use_strand_id_backup=True, strands=row.Lchain)
         pdb = download_or_open_pdb(row.pdb, default_save_dir=data_path / "pdb")
+
         model = pdb[row.model]
         l_chain_set = {model[lchain]for lchain in row.Lchain}
         ag_chain_set = {model[ag_chain]for ag_chain in row.antigen_chain}
@@ -39,10 +46,10 @@ for i, row in enumerate(df.itertuples(index=False)):
         ag_chain_coords = substructures_to_coordinates(ag_chain_set)
         dist_mat = compute_distance_matrix(l_chain_coords, ag_chain_coords)
 
-        indices = filter_distance_matrix(dist_mat, cutoff=4.0)
+        indices = filter_distance_matrix(dist_mat, cutoff=6.0)
         binding_interface = get_residues_from_filter_results(l_chain_atoms, ag_chain_atoms, indices)
 
-        res = (pdb, row.model, row.Lchain, row.antigen_chain, dist_mat, indices, binding_interface)
+        res = (row.pdb, row.model, row.Lchain, row.antigen_chain, binding_interface, lc_seq)
         data[row.pdb] = res
     except Exception as e:
         print(f"Could not process {row.pdb}, {e}")

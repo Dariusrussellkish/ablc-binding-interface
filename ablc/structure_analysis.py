@@ -2,13 +2,15 @@
 
 from Bio.PDB import *
 from Bio.PDB import Structure, Chain, Residue, Atom
+import requests
+from itertools import count
 import numpy as np
 # from collections import namedtuple
 
 # BoundingBox = namedtuple("BoundingBox", ("min_x", "max_x", "min_y", "max_y", "min_z", "max_z"))
 
-pdb_parser = PDBParser()
-pdb_list = PDBList()
+pdb_parser = PDBParser(QUIET=True)
+pdb_list = PDBList(verbose=False)
 
 
 def download_or_open_pdb(pdb_id: str, default_save_dir="tests/data/pdb/"):
@@ -18,21 +20,51 @@ def download_or_open_pdb(pdb_id: str, default_save_dir="tests/data/pdb/"):
     return structure
 
 
-def substructures_to_atoms_list(substrs):
+def get_sequence_from_pdb(pdb_id: str, keyword="light", use_strand_id_backup=False, strands=None):
+    for i in count(1):
+        response = requests.get(f"https://data.rcsb.org/rest/v1/core/polymer_entity/{pdb_id}/{i}")
+        if response.status_code == 404:
+            raise LookupError(f"Count not find a light chain sequence for {pdb_id}")
+        r = response.json()
+        try:
+            match = False
+            if keyword in r['rcsb_polymer_entity']['pdbx_description'].lower():
+                match = True
+            elif use_strand_id_backup and any([strand in r['entity_poly']['pdbx_strand_id'] for strand in strands]):
+                match = True
+
+            if match:
+                seq = r['entity_poly']['pdbx_seq_one_letter_code']
+                return seq
+        except KeyError:
+            pass
+
+
+def substructures_to_atoms_list(substrs, return_end_boundaries=False):
     arr = []
+    boundaries = []
     for substr in substrs:
         arr += list(substr.get_atoms())
-    return arr
+        boundaries.append(len(arr) - 1)
+    if return_end_boundaries:
+        return arr, boundaries
+    else:
+        return arr
 
 
-def substructures_to_coordinates(substrs):
+def substructures_to_coordinates(substrs, return_end_boundaries=False):
     def atom_to_coordinates(atom: Atom.Atom):
         return atom.get_coord()
 
     arr = []
+    boundaries = []
     for substr in substrs:
         arr += list(map(atom_to_coordinates, substr.get_atoms()))
-    return np.stack(arr)
+        boundaries.append(len(arr) - 1)
+    if return_end_boundaries:
+        return np.stack(arr), boundaries
+    else:
+        return np.stack(arr)
 
 
 def compute_distance_matrix(lc_coords: np.ndarray, antigen_coords: np.ndarray):
