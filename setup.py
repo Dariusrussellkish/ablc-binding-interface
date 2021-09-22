@@ -10,7 +10,7 @@ if __name__ == "__main__":
 
     setup(
         name="ablc",
-        python_requires=">=3.9.0",
+        python_requires=">=3.8.0",
         version=open("version.txt", "r").read(),
         description="Analysis of Light Chain-Antigen Binding Interface",
         url="https://github.com/Dariusrussellkish/ablc-binding-interface",
